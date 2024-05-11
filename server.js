@@ -48,25 +48,40 @@ app.get('/protected', isLoggedIn, (req, res) => {
   info += 'email: ' + req.user.email + '\n';
   info += 'name: ' + req.user.given_name + '\n';
   info += 'surname: ' + req.user.family_name + '\n';
-  createNewUser(req);
+  createNewUser(req, res);
   res.send(info);
 });
 
 app.get('/logout', (req, res) => {
-  req.logout();
-  req.session.destroy();
-  res.send('Goodbye!');
+  req.logout(err => {
+      if (err) {
+          return next(err);
+      }
+      req.session.destroy(() => {
+          res.send('Goodbye!');
+      });
+  });
 });
 
 app.get('/auth/google/failure', (req, res) => {
   res.send('Failed to authenticate..');
 });
 
-async function createNewUser(req) {
-  (await connection).beginTransaction();
-  connection.query("SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE google_id = '" + req.user.id + "') THEN 'true' ELSE 'false' END AS result;")
+async function createNewUser(req, res) {
+  (await connection).query(`SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE google_id = '${req.user.id}') THEN 'true' ELSE 'false' END AS result;`)
   .then(async (value) => {
-    print(value);
+    // if user is not in DB, create one
+    if(value[0][0].result == 'false') {
+      try{
+        (await connection).beginTransaction();
+        (await connection).query(`INSERT INTO \`owl-books\`.\`users\` (\`google_id\`, \`name\`, \`surname\`, \`email\`) VALUES ('${req.user.id}', '${req.user.given_name}', '${req.user.family_name}', '${req.user.email}');`)
+        .then((await connection).commit());
+      } catch (error) {
+        (await connection).rollback();
+        console.log(`create-new-user: error: ${error}`);
+        res.status(500).send('Error retrieving data from database');
+      }
+    } 
   })
   return;
 }
