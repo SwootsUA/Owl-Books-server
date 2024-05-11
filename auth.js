@@ -1,6 +1,7 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth2').Strategy;
 const fs = require('fs');
+const { log } = require('console');
 
 fs.readFile('credentials.json', 'utf8', (err, data) => {
   if (err) {
@@ -18,20 +19,24 @@ fs.readFile('credentials.json', 'utf8', (err, data) => {
 
     const GOOGLE_CLIENT_ID = credentials.client_id;
     const GOOGLE_CLIENT_SECRET = credentials.client_secret;
+
+    passport.use(new GoogleStrategy(
+      {
+        clientID: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
+        callbackURL: "http://localhost:2210/auth/google/callback",
+        passReqToCallback: true,
+      },
+      
+      function(request, accessToken, refreshToken, profile, done) {
+        return done(null, profile);
+      }
+    ));
+
   } catch (error) {
     console.error('Error parsing JSON in credentials file:', error);
   }
 });
-
-passport.use(new GoogleStrategy({
-  clientID: GOOGLE_CLIENT_ID,
-  clientSecret: GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://localhost:2210/auth/google/callback",
-  passReqToCallback: true,
-},
-function(request, accessToken, refreshToken, profile, done) {
-  return done(null, profile);
-}));
 
 passport.serializeUser(function(user, done) {
   done(null, user);
