@@ -16,15 +16,28 @@ var connection = mysql.createConnection({
   database: 'owl-books'
 });
 
+app.use(cors());
+
 // GOOGLE OAUTH2 Section (start)
 
 function isLoggedIn(req, res, next) {
+  console.log(req.headers);
   req.user ? next() : res.sendStatus(401);
 }
 
 app.use(session({ secret: 'cats', resave: false, saveUninitialized: true }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+app.get('/protected', isLoggedIn, (req, res) => {
+  let info = '';
+  info += 'id: ' + req.user.id + '\n';
+  info += 'email: ' + req.user.email + '\n';
+  info += 'name: ' + req.user.given_name + '\n';
+  info += 'surname: ' + req.user.family_name + '\n';
+  createNewUser(req, res);
+  res.send(info);
+});
 
 // Redundant
 // app.get('/auth', (req, res) => {
@@ -37,20 +50,14 @@ app.get('/auth/google',
 
 app.get( '/auth/google/callback',
   passport.authenticate('google', {
-    successRedirect: '/protected',
+    successRedirect: '/close-window',
     failureRedirect: '/auth/google/failure'
   })
 );
 
-app.get('/protected', isLoggedIn, (req, res) => {
-  let info = '';
-  info += 'id: ' + req.user.id + '\n';
-  info += 'email: ' + req.user.email + '\n';
-  info += 'name: ' + req.user.given_name + '\n';
-  info += 'surname: ' + req.user.family_name + '\n';
-  createNewUser(req, res);
-  res.send(info);
-});
+app.get('/close-window', (req, res) => {
+  res.send('<script>window.location.href = "http://127.0.0.1:5500/user.html" </script>');
+})
 
 app.get('/logout', (req, res) => {
   req.logout(err => {
@@ -64,7 +71,7 @@ app.get('/logout', (req, res) => {
 });
 
 app.get('/auth/google/failure', (req, res) => {
-  res.send('Failed to authenticate..');
+  res.send('failed to authorize');
 });
 
 async function createNewUser(req, res) {
@@ -87,8 +94,6 @@ async function createNewUser(req, res) {
 }
 
 // GOOGLE OAUTH2 Section (end)
-
-app.use(cors());
 
 app.get(
   '/image', 
