@@ -1,7 +1,7 @@
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
-import path from 'path';
+import path, { resolve } from 'path';
 
 const session = require('express-session');
 const passport = require('passport');
@@ -21,7 +21,6 @@ app.use(cors());
 // GOOGLE OAUTH2 Section (start)
 
 function isLoggedIn(req, res, next) {
-  console.log(req.headers);
   req.user ? next() : res.sendStatus(401);
 }
 
@@ -29,13 +28,9 @@ app.use(session({ secret: 'cats', resave: false, saveUninitialized: true }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.get('/protected', isLoggedIn, (req, res) => {
-  let info = '';
-  info += 'id: ' + req.user.id + '\n';
-  info += 'email: ' + req.user.email + '\n';
-  info += 'name: ' + req.user.given_name + '\n';
-  info += 'surname: ' + req.user.family_name + '\n';
-  createNewUser(req, res);
+app.get('/protected', isLoggedIn, async (req, res) => {
+  let info = await createNewUser(req, res);
+  console.log(info);
   res.send(info);
 });
 
@@ -75,22 +70,42 @@ app.get('/auth/google/failure', (req, res) => {
 });
 
 async function createNewUser(req, res) {
-  (await connection).query(`SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE google_id = '${req.user.id}') THEN 'true' ELSE 'false' END AS result;`)
-  .then(async (value) => {
-    // if user is not in DB, create one
-    if(value[0][0].result == 'false') {
-      try{
-        (await connection).beginTransaction();
-        (await connection).query(`INSERT INTO \`owl-books\`.\`users\` (\`google_id\`, \`name\`, \`surname\`, \`email\`) VALUES ('${req.user.id}', '${req.user.given_name}', '${req.user.family_name}', '${req.user.email}');`)
-        .then((await connection).commit());
-      } catch (error) {
-        (await connection).rollback();
-        console.log(`create-new-user: error: ${error}`);
-        res.status(500).send('Error retrieving data from database');
+  return new Promise(async (resolve, reject) => {
+    try {
+      const userExistsResult = await (await connection).query(`SELECT CASE WHEN EXISTS (SELECT 1 FROM users WHERE google_id = '${req.user.id}') THEN 'true' ELSE 'false' END AS result;`);
+
+      // if user is not in DB, create one
+      if(userExistsResult && userExistsResult[0] && userExistsResult[0][0].result == 'false') {
+        try{
+          await (await connection).beginTransaction();
+          await (await connection).query(`INSERT INTO \`owl-books\`.\`users\` (\`google_id\`, \`name\`, \`surname\`, \`email\`) VALUES ('${req.user.id}', '${req.user.given_name}', '${req.user.family_name}', '${req.user.email}');`);
+          (await connection).commit();
+        } catch (error) {
+          (await connection).rollback();
+          console.log(`create-new-user: error: ${error}`);
+          res.status(500).send('Error retrieving data from database');
+        }
       }
-    } 
-  })
-  return;
+      
+      const userResult = await (await connection).query(`SELECT * FROM users WHERE google_id = '${req.user.id}'`);
+      const dbUser = userResult[0][0];
+
+      const info = {
+        name: dbUser.name,
+        surname: dbUser.surname,
+        email: dbUser.email,
+        phone_number: dbUser.phone_number,
+        region_id: dbUser.region_id,
+        city: dbUser.city
+      };
+
+      console.log(info);
+      resolve(info);  // Resolve the promise with the info object
+    } catch (error) {
+      console.error(`create-new-user: error: ${error}`);
+      reject('Error retrieving data from database');  // Reject the promise with the error message
+    }
+  });
 }
 
 // GOOGLE OAUTH2 Section (end)
