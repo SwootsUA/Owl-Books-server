@@ -91,6 +91,7 @@ async function createNewUser(req, res) {
       const dbUser = userResult[0][0];
 
       const info = {
+        picture: req.user.picture,
         name: dbUser.name,
         surname: dbUser.surname,
         email: dbUser.email,
