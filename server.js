@@ -1,7 +1,7 @@
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
-import path, { resolve } from 'path';
+import path from 'path';
 
 const session = require('express-session');
 const passport = require('passport');
@@ -16,21 +16,25 @@ var connection = mysql.createConnection({
   database: 'owl-books'
 });
 
-app.use(cors());
+app.use(cors({origin: ['http://localhost:5500', 'http://127.0.0.1:5500']}));
 
 // GOOGLE OAUTH2 Section (start)
 
 function isLoggedIn(req, res, next) {
+  res.setHeader('Access-Control-Allow-Credentials', true);
   req.user ? next() : res.sendStatus(401);
 }
 
-app.use(session({ secret: 'cats', resave: false, saveUninitialized: true }));
+app.use(session({ 
+  secret: 'cats', 
+  resave: false, 
+  saveUninitialized: true 
+}));
 app.use(passport.initialize());
 app.use(passport.session());
 
 app.get('/protected', isLoggedIn, async (req, res) => {
   let info = await createNewUser(req, res);
-  console.log(info);
   res.send(info);
 });
 
@@ -51,10 +55,11 @@ app.get( '/auth/google/callback',
 );
 
 app.get('/close-window', (req, res) => {
-  res.send('<script>window.location.href = "http://127.0.0.1:5500/user.html" </script>');
+  res.send('<script>window.location.href = "http://localhost:5500/user.html" </script>');
 })
 
 app.get('/logout', (req, res) => {
+  res.setHeader('Access-Control-Allow-Credentials', true);
   req.logout(err => {
       if (err) {
           return next(err);
@@ -91,6 +96,7 @@ async function createNewUser(req, res) {
       const dbUser = userResult[0][0];
 
       const info = {
+        google_id: req.user.id,
         picture: req.user.picture,
         name: dbUser.name,
         surname: dbUser.surname,
