@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise';
 import cors from 'cors';
 import path from 'path';
 
+const bodyParser = require('body-parser');
 const session = require('express-session');
 const passport = require('passport');
 
@@ -17,21 +18,23 @@ var connection = mysql.createConnection({
 });
 
 app.use(cors({origin: ['http://localhost:5500', 'http://127.0.0.1:5500']}));
+app.use(bodyParser.json());
 
 // GOOGLE OAUTH2 Section (start)
-
-function isLoggedIn(req, res, next) {
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  req.user ? next() : res.sendStatus(401);
-}
 
 app.use(session({ 
   secret: 'cats', 
   resave: false, 
   saveUninitialized: true 
 }));
+
 app.use(passport.initialize());
 app.use(passport.session());
+
+function isLoggedIn(req, res, next) {
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  req.user ? next() : res.sendStatus(401);
+}
 
 app.get('/protected', isLoggedIn, async (req, res) => {
   let info = await createNewUser(req, res);
@@ -47,12 +50,31 @@ app.get('/auth/google',
   passport.authenticate('google', { scope: [ 'email', 'profile' ] }
 ));
 
-app.get( '/auth/google/callback',
+app.get('/auth/google/callback',
   passport.authenticate('google', {
     successRedirect: '/close-window',
     failureRedirect: '/auth/google/failure'
   })
 );
+
+app.get('/save-user', async (req, res) => {
+  try {
+    const sessionID = Object.keys(req.sessionStore.sessions)[0];
+    var query = req.query;
+    var google_id, fields;
+    google_id = query.google_id;
+    fields = JSON.parse(query.fields);
+
+    const googleId = JSON.parse(req.sessionStore.sessions[sessionID]).passport.user.sub;
+
+    console.log(googleId == google_id)
+    console.log(`google_id:${google_id}, fields:${JSON.stringify(fields)}`);
+    res.status(200).send('user saved');
+  } catch (error) {
+    console.log(`save-user error: ${error}`)
+    res.status(401).send('user not saved (Unauthorized)');
+  }
+});
 
 app.get('/close-window', (req, res) => {
   res.send('<script>window.location.href = "http://localhost:5500/user.html" </script>');
