@@ -2,6 +2,7 @@ import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const bodyParser = require('body-parser');
 const session = require('express-session');
@@ -65,11 +66,29 @@ app.get('/save-user', async (req, res) => {
     google_id = query.google_id;
     fields = JSON.parse(query.fields);
 
-    const googleId = JSON.parse(req.sessionStore.sessions[sessionID]).passport.user.sub;
+    // const googleId = JSON.parse(req.sessionStore.sessions[sessionID]).passport.user.sub;
+    
+    // if (googleId != google_id) {
+    //   res.status(401).send('user not saved (Unauthorized)');
+    //   return;
+    // }
 
-    console.log(googleId == google_id)
-    console.log(`google_id:${google_id}, fields:${JSON.stringify(fields)}`);
-    res.status(200).send('user saved');
+    var fieldsQuery = '';
+
+    for (var field in fields) {
+      fieldsQuery += `${field}='${fields[field]}',`;
+    }
+    
+    fieldsQuery = fieldsQuery.slice(0, -1);
+
+    var saveUserQuery = `UPDATE users SET ${fieldsQuery} WHERE google_id='${google_id}';`;
+
+    try {
+      await (await connection).query(saveUserQuery);
+      res.status(200).send('user saved');
+    } catch (error) {
+      res.status(500).send('internal server error');
+    } 
   } catch (error) {
     console.log(`save-user error: ${error}`)
     res.status(401).send('user not saved (Unauthorized)');
@@ -165,6 +184,8 @@ app.use(
 
       (await connection).beginTransaction();
       
+      // TODO: add user_id here
+
       (await connection).query(`INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`) VALUES ('${name}', '${surname}', '${phone_number}', '${email}', ${region_id}, '${city}', '${NovaPoshta}', '${description}')`)
       .then( async (value) => {
         orderId = value[0].insertId;
