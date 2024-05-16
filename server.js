@@ -178,7 +178,7 @@ app.use(
     try {
       // test link
       // http://localhost:2210/add-order?name=John&surname=Doe&phone_number=123456&email=johndoe@email.com&region_id=1&city=New+York&NovaPoshta=123456&description=This+is+a+test+order&content=[{"book_id":1,"amount":2}]
-      const { name, surname, phone_number, email, region_id, city, NovaPoshta, description, content } = req.query;
+      const { google_id, name, surname, phone_number, email, region_id, city, NovaPoshta, description, content } = req.query;
       
       const parsedContent = JSON.parse(content);
       const bookIds = parsedContent.map(item => item.id);
@@ -187,33 +187,54 @@ app.use(
 
       //console.log(`add-order: values: ${name, surname, phone_number, email, region_id, city, NovaPoshta, description, parsedContent}`);
 
-      (await connection).beginTransaction();
-      
-      // TODO: add user_id here
+      await (await connection).query(`SELECT user_id FROM users WHERE google_id = '${google_id}';`)
+      .then(async (user) => {
+        var user_id = user[0][0].user_id;
+        var addOrderQuery;
 
-      (await connection).query(`INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`) VALUES ('${name}', '${surname}', '${phone_number}', '${email}', ${region_id}, '${city}', '${NovaPoshta}', '${description}')`)
-      .then( async (value) => {
-        orderId = value[0].insertId;
+        console.log(user_id);
 
-        if(bookIds.length == 1){
-          (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (${orderId}, ${bookIds[0]}, ${amounts[0]})`)
-          .catch(async error => {
-            console.log(`add-order: error: ${error}`);
-            (await connection).rollback();
-          });
+        if(user_id == undefined) {
+          addOrderQuery = `
+            INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`) 
+            VALUES ('${name}', '${surname}', '${phone_number}', '${email}', ${region_id}, '${city}', '${NovaPoshta}', '${description}')`;
         } else {
-          for (let i = 0; i < content.length; i++) {
-            (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (${orderId}, ${bookIds[i]}, ${amounts[i]})`)
+          addOrderQuery = `
+            INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`, user_id) 
+            VALUES ('${name}', '${surname}', '${phone_number}', '${email}', ${region_id}, '${city}', '${NovaPoshta}', '${description}', ${user_id})`;
+        }
+
+        (await connection).beginTransaction();
+    
+        (await connection).query(addOrderQuery)
+        .then( async (value) => {
+          orderId = value[0].insertId;
+
+          if(bookIds.length == 1){
+            (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (${orderId}, ${bookIds[0]}, ${amounts[0]})`)
             .catch(async error => {
               console.log(`add-order: error: ${error}`);
               (await connection).rollback();
             });
+          } else {
+            for (let i = 0; i < content.length; i++) {
+              (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (${orderId}, ${bookIds[i]}, ${amounts[i]})`)
+              .catch(async error => {
+                console.log(`add-order: error: ${error}`);
+                (await connection).rollback();
+              });
+            }
           }
-        }
 
-        (await connection).commit();
-        res.status(201).json({ orderId });
+          (await connection).commit();
+          res.status(201).json({ orderId });
+        });
+        
       });
+
+      
+
+      
     } catch (error) {
       (await connection).rollback();
       console.log(`add-order: error: ${error}`);
