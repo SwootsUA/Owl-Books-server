@@ -288,13 +288,30 @@ app.use(
       var info;
       var genres;
       var authors;
-      (await connection).query(`SELECT book_id, quantity, ISBN, page_amount, books.\`name\`, publisher.\`name\` AS pub_name, price, image, \`description\` FROM books JOIN publisher ON books.publisher_id = publisher.publisher_id WHERE book_id = ${parseInt(id)};`)
+      (await connection).query(`
+      SELECT book_id, quantity, ISBN, page_amount, books.\`name\`, publisher.\`name\` 
+      AS pub_name, price, image, \`description\` 
+      FROM books 
+      JOIN publisher 
+      ON books.publisher_id = publisher.publisher_id 
+      WHERE book_id = ${parseInt(id)}
+      AND hidden = 'No';`)
       .then(async (inf) => {
         info = inf[0][0];
-        (await connection).query(`SELECT genres.\`name\` FROM books_genres JOIN genres ON genres.genre_id = books_genres.genre_id WHERE book_id = ${parseInt(id)};`)
+        (await connection).query(`
+        SELECT genres.\`name\` 
+        FROM books_genres 
+        JOIN genres 
+        ON genres.genre_id = books_genres.genre_id 
+        WHERE book_id = ${parseInt(id)};`)
         .then(async (gen) => {
           genres = gen[0];
-          (await connection).query(`SELECT authors.\`name\` FROM books_authors JOIN authors ON authors.author_id = books_authors.author_id WHERE book_id = ${parseInt(id)};`)
+          (await connection).query(`
+          SELECT authors.\`name\` 
+          FROM books_authors 
+          JOIN authors 
+          ON authors.author_id = books_authors.author_id 
+          WHERE book_id = ${parseInt(id)};`)
           .then(async(aut) => {
             authors = aut[0];
             res.send({info, genres, authors});
@@ -317,7 +334,12 @@ app.use(
 
       //console.log(`search: name: ${name}`);
 
-      (await connection).query(`SELECT book_id, quantity, \`name\`, price, image FROM books WHERE \`name\` LIKE '%${search}%';`)
+      (await connection).query(`
+      SELECT book_id, quantity, \`name\`, price, image, hidden 
+      FROM books 
+      WHERE \`name\` 
+      LIKE '%${search}%'
+      AND hidden='No';`)
       .then(async (result) => {
         res.send(result[0]);
       });
