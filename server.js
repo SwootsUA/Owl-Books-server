@@ -177,7 +177,7 @@ app.use(
   async (req, res) => {
     try {
       // test link
-      // http://localhost:2210/add-order?name=John&surname=Doe&phone_number=123456&email=johndoe@email.com&region_id=1&city=New+York&NovaPoshta=123456&description=This+is+a+test+order&content=[{"book_id":1,"amount":2}]
+      // http://localhost:2210/add-order?google_id=123123123123&name=John&surname=Doe&phone_number=123456&email=johndoe@email.com&region_id=1&city=New+York&NovaPoshta=123456&description=This+is+a+test+order&content=[{"book_id":1,"amount":2}]
       const { google_id, name, surname, phone_number, email, region_id, city, NovaPoshta, description, content } = req.query;
       
       const parsedContent = JSON.parse(content);
