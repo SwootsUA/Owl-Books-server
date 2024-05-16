@@ -1,3 +1,6 @@
+// to allow the current PowerShell session to execute scripts write: `Set-ExecutionPolicy RemoteSigned -Scope Process`
+// and then to start the server write: `nodemon index.js`
+
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
@@ -65,6 +68,8 @@ app.get('/save-user', async (req, res) => {
     var google_id, fields;
     google_id = query.google_id;
     fields = JSON.parse(query.fields);
+
+    console.log(fields);
 
     // const googleId = JSON.parse(req.sessionStore.sessions[sessionID]).passport.user.sub;
     
