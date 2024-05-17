@@ -37,7 +37,7 @@ app.use(passport.session());
 
 function isLoggedIn(req, res, next) {
   res.setHeader('Access-Control-Allow-Credentials', true);
-  req.user ? next() : res.sendStatus(401);
+  req.user ? next() : res.status(401).send('<script>window.location.href = "http://localhost:5500/user.html" </script>');
 }
 
 app.get('/protected', isLoggedIn, async (req, res) => {
@@ -161,7 +161,82 @@ async function createNewUser(req, res) {
   });
 }
 
+app.get('/pdf', isLoggedIn, async (req, res) => {
+  const google_id = req.user.sub;
+  const { book_id } = req.query;
+
+  if (!book_id) {
+    return res.status(400).send('Missing required query parameters');
+  }
+
+  await (await connection).query(`
+  SELECT EXISTS (
+    SELECT 1
+      FROM order_info 
+      WHERE order_id IN (
+        SELECT order_id 
+        FROM order_content 
+        WHERE book_id = ${book_id}
+      ) 
+      AND user_id = (
+        SELECT user_id 
+        FROM users 
+        WHERE google_id = ${google_id}
+      ) 
+      AND paid_status = 'Yes'
+  ) AS isNotNULL;`)
+  .then(async (isOwend) => {
+    if(isOwend[0][0].isNotNULL != 1) {
+      res.status(401).send('You don\'t own this book');
+    }
+  });
+
+  await (await connection).query(`SELECT file_name FROM books WHERE book_id = ${book_id};`)
+  .then(async (file_name) => {
+    file_name = file_name[0][0].file_name;
+    if(file_name == null || file_name == undefined) {
+      res.status(404).send('Book not found');
+    }
+    const filePath = path.join(__dirname, `./electronic_books/${file_name}`);
+    res.sendFile(filePath);
+  });
+});
+
 // GOOGLE OAUTH2 Section (end)
+
+app.get(
+  '/books', isLoggedIn,
+  async function (req, res) {
+    const google_id = req.user.sub;
+    const { format_id } = req.query;
+
+    if (!format_id) {
+      return res.status(400).send('Missing required query parameters');
+    }
+
+    try {
+      const bookIds = await (await connection).query(
+        `SELECT book_id FROM books 
+        WHERE format_id = '${format_id}' 
+        AND book_id IN (
+          SELECT book_id FROM order_content 
+          WHERE order_id IN (
+            SELECT order_id FROM order_info 
+            WHERE user_id = (
+              SELECT user_id FROM users 
+              WHERE google_id = ${google_id}
+            ) AND paid_status = 'Yes'
+          )
+        );`
+      );
+
+      res.send(bookIds[0]);
+    } catch (error) {
+      console.log(`books: error: ${error}`);
+      res.status(500).send('Error retrieving data from database');
+    }
+  }
+);
 
 app.get(
   '/image', 
@@ -180,6 +255,8 @@ app.use(
       // http://localhost:2210/add-order?google_id=123123123123&name=John&surname=Doe&phone_number=123456&email=johndoe@email.com&region_id=1&city=New+York&NovaPoshta=123456&description=This+is+a+test+order&content=[{"book_id":1,"amount":2}]
       const { google_id, name, surname, phone_number, email, region_id, city, NovaPoshta, description, content } = req.query;
       
+      console.log(content);
+
       const parsedContent = JSON.parse(content);
       const bookIds = parsedContent.map(item => item.id);
       const amounts = parsedContent.map(item => item.quantity);
@@ -192,7 +269,7 @@ app.use(
         var user_id = user[0][0].user_id;
         var addOrderQuery;
 
-        console.log(user_id);
+        console.log(user_id); // 3
 
         if(user_id == undefined) {
           addOrderQuery = `
@@ -231,10 +308,6 @@ app.use(
         });
         
       });
-
-      
-
-      
     } catch (error) {
       (await connection).rollback();
       console.log(`add-order: error: ${error}`);
@@ -260,7 +333,7 @@ app.use(
             WHERE books_authors.book_id = books.book_id LIMIT 1) AS author_name 
         FROM books 
         WHERE books.book_id IN (${search});`)
-      .then(async (result) => {
+      .then((result) => {
         res.send(result[0]);
       });
     } catch (error) {
