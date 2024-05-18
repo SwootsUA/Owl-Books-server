@@ -5,7 +5,6 @@ import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 const bodyParser = require('body-parser');
 const session = require('express-session');
@@ -161,6 +160,8 @@ async function createNewUser(req, res) {
   });
 }
 
+// GOOGLE OAUTH2 Section (end)
+
 app.get('/pdf', isLoggedIn, async (req, res) => {
   const google_id = req.user.sub;
   const { book_id } = req.query;
@@ -169,40 +170,91 @@ app.get('/pdf', isLoggedIn, async (req, res) => {
     return res.status(400).send('Missing required query parameters');
   }
 
-  await (await connection).query(`
-  SELECT EXISTS (
-    SELECT 1
-      FROM order_info 
-      WHERE order_id IN (
-        SELECT order_id 
-        FROM order_content 
-        WHERE book_id = ${book_id}
-      ) 
-      AND user_id = (
-        SELECT user_id 
-        FROM users 
-        WHERE google_id = ${google_id}
-      ) 
-      AND paid_status = 'Yes'
-  ) AS isNotNULL;`)
-  .then(async (isOwend) => {
-    if(isOwend[0][0].isNotNULL != 1) {
-      res.status(401).send('You don\'t own this book');
-    }
-  });
+  try {
+    await (await connection).query(`
+    SELECT EXISTS (
+      SELECT 1
+        FROM order_info 
+        WHERE order_id IN (
+          SELECT order_id 
+          FROM order_content 
+          WHERE book_id = ${book_id}
+        ) 
+        AND user_id = (
+          SELECT user_id 
+          FROM users 
+          WHERE google_id = ${google_id}
+        ) 
+        AND paid_status = 'Yes'
+    ) AS isNotNULL;`)
+    .then(async (isOwend) => {
+      if(isOwend[0][0].isNotNULL != 1) {
+        return res.status(401).send('You don\'t own this book');
+      } 
+    });
 
-  await (await connection).query(`SELECT file_name FROM books WHERE book_id = ${book_id};`)
-  .then(async (file_name) => {
-    file_name = file_name[0][0].file_name;
-    if(file_name == null || file_name == undefined) {
-      res.status(404).send('Book not found');
-    }
-    const filePath = path.join(__dirname, `./electronic_books/${file_name}`);
-    res.sendFile(filePath);
-  });
+    await (await connection).query(`SELECT file_name FROM books WHERE book_id = ${book_id};`)
+    .then(async (file_name) => {
+      file_name = file_name[0][0].file_name;
+      if(file_name == null || file_name == undefined) {
+        return res.status(404).send('Book not found');
+      }
+      const filePath = path.join(__dirname, `./electronic_books/${file_name}`);
+      res.sendFile(filePath);
+    });
+  }
+  catch (error) {
+    console.log("/pdf error: " + error);
+    return;
+  }
 });
 
-// GOOGLE OAUTH2 Section (end)
+app.get('/mp3', isLoggedIn, async (req, res) => {
+  const google_id = req.user.sub;
+  const { book_id } = req.query;
+
+  if (!book_id) {
+    return res.status(400).send('Missing required query parameters');
+  }
+
+  try {
+    await (await connection).query(`
+    SELECT EXISTS (
+      SELECT 1
+        FROM order_info 
+        WHERE order_id IN (
+          SELECT order_id 
+          FROM order_content 
+          WHERE book_id = ${book_id}
+        ) 
+        AND user_id = (
+          SELECT user_id 
+          FROM users 
+          WHERE google_id = ${google_id}
+        ) 
+        AND paid_status = 'Yes'
+    ) AS isNotNULL;`)
+    .then(async (isOwend) => {
+      if(isOwend[0][0].isNotNULL != 1) {
+        return res.status(401).send('You don\'t own this book');
+      } 
+    });
+
+    await (await connection).query(`SELECT file_name FROM books WHERE book_id = ${book_id};`)
+    .then(async (file_name) => {
+      file_name = file_name[0][0].file_name;
+      if(file_name == null || file_name == undefined) {
+        return res.status(404).send('Book not found');
+      }
+      const filePath = path.join(__dirname, `./audio_books/${file_name}`);
+      res.sendFile(filePath);
+    });
+  }
+  catch (error) {
+    console.log("/mp3 error: " + error);
+    return;
+  }
+});
 
 app.get(
   '/books', isLoggedIn,
@@ -251,70 +303,66 @@ app.use(
   '/add-order',
   async (req, res) => {
     try {
-      // test link
-      // http://localhost:2210/add-order?google_id=123123123123&name=John&surname=Doe&phone_number=123456&email=johndoe@email.com&region_id=1&city=New+York&NovaPoshta=123456&description=This+is+a+test+order&content=[{"book_id":1,"amount":2}]
-      const { google_id, name, surname, phone_number, email, region_id, city, NovaPoshta, description, content } = req.query;
-      
-      console.log(content);
+      const { 
+        google_id = 0, 
+        name, 
+        surname, 
+        phone_number = null, 
+        email, 
+        region_id = 0, 
+        city = null, 
+        NovaPoshta = null, 
+        description = '', 
+        content 
+      } = req.query;
 
       const parsedContent = JSON.parse(content);
       const bookIds = parsedContent.map(item => item.id);
       const amounts = parsedContent.map(item => item.quantity);
-      var orderId;
+      let orderId;
 
-      //console.log(`add-order: values: ${name, surname, phone_number, email, region_id, city, NovaPoshta, description, parsedContent}`);
 
-      await (await connection).query(`SELECT user_id FROM users WHERE google_id = '${google_id}';`)
-      .then(async (user) => {
-        var user_id = user[0][0].user_id;
-        var addOrderQuery;
+      const [user] = await (await connection).query(`SELECT user_id FROM users WHERE google_id = ?;`, [google_id]);
+      let user_id = user.length > 0 ? user[0].user_id : undefined;
 
-        console.log(user_id); // 3
+      // Construct the base query
+      let addOrderQuery = `
+        INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`${user_id !== undefined ? ', user_id' : ''}) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?${user_id !== undefined ? ', ?' : ''});
+      `;
 
-        if(user_id == undefined) {
-          addOrderQuery = `
-            INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`) 
-            VALUES ('${name}', '${surname}', '${phone_number}', '${email}', ${region_id}, '${city}', '${NovaPoshta}', '${description}')`;
-        } else {
-          addOrderQuery = `
-            INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`, user_id) 
-            VALUES ('${name}', '${surname}', '${phone_number}', '${email}', ${region_id}, '${city}', '${NovaPoshta}', '${description}', ${user_id})`;
-        }
+      // Query parameters
+      let queryParams = [name, surname, phone_number, email, region_id, city, NovaPoshta, description];
+      if (user_id !== undefined) {
+        queryParams.push(user_id);
+      }
 
-        (await connection).beginTransaction();
-    
-        (await connection).query(addOrderQuery)
-        .then( async (value) => {
-          orderId = value[0].insertId;
+      // Begin transaction
+      await (await connection).beginTransaction();
 
-          if(bookIds.length == 1){
-            (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (${orderId}, ${bookIds[0]}, ${amounts[0]})`)
-            .catch(async error => {
-              console.log(`add-order: error: ${error}`);
-              (await connection).rollback();
-            });
-          } else {
-            for (let i = 0; i < content.length; i++) {
-              (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (${orderId}, ${bookIds[i]}, ${amounts[i]})`)
-              .catch(async error => {
-                console.log(`add-order: error: ${error}`);
-                (await connection).rollback();
-              });
-            }
-          }
+      // Execute the query
+      const [result] = await (await connection).query(addOrderQuery, queryParams);
+      orderId = result.insertId;
 
-          (await connection).commit();
-          res.status(201).json({ orderId });
-        });
-        
-      });
+      // Insert into order_content table
+      const orderContentQueries = bookIds.map(async (book_id, i) => (
+        (await connection).query(`INSERT INTO order_content (order_id, book_id, amount) VALUES (?, ?, ?);`, [orderId, book_id, amounts[i]])
+      ));
+
+      await Promise.all(orderContentQueries);
+
+      // Commit transaction
+      await (await connection).commit();
+      res.status(201).json({ orderId });
+      
     } catch (error) {
-      (await connection).rollback();
+      await (await connection).rollback();
       console.log(`add-order: error: ${error}`);
-      res.status(500).send('Error retrieving data from database');
+      res.status(500).send('Error processing your request');
     }
   }
 );
+
 
 app.use(
   '/cart',
@@ -326,7 +374,7 @@ app.use(
 
       let search = (typeof ids === 'undefined' || ids == '') ? "-1" : ids;
       (await connection).query(`
-        SELECT books.book_id, books.image, books.\`name\`, books.price, (
+        SELECT books.format_id, books.book_id, books.image, books.\`name\`, books.price, (
             SELECT authors.\`name\` 
             FROM authors 
             JOIN books_authors ON authors.author_id = books_authors.author_id 
@@ -384,7 +432,7 @@ app.use(
       var authors;
       (await connection).query(`
       SELECT book_id, quantity, ISBN, page_amount, books.\`name\`, publisher.\`name\` 
-      AS pub_name, price, image, \`description\` 
+      AS pub_name, price, image, \`description\`, format_id
       FROM books 
       JOIN publisher 
       ON books.publisher_id = publisher.publisher_id 
