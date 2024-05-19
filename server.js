@@ -431,8 +431,7 @@ app.use(
       var genres;
       var authors;
       (await connection).query(`
-      SELECT book_id, quantity, ISBN, page_amount, books.\`name\`, publisher.\`name\` 
-      AS pub_name, price, image, \`description\`, format_id
+      SELECT book_id, quantity, ISBN, page_amount, books.\`name\`, publisher.\`name\` AS pub_name, books.publisher_id AS pub_id, price, image, \`description\`, format_id
       FROM books 
       JOIN publisher 
       ON books.publisher_id = publisher.publisher_id 
@@ -441,7 +440,7 @@ app.use(
       .then(async (inf) => {
         info = inf[0][0];
         (await connection).query(`
-        SELECT genres.\`name\` 
+        SELECT genres.\`name\`, genres.genre_id
         FROM books_genres 
         JOIN genres 
         ON genres.genre_id = books_genres.genre_id 
@@ -449,7 +448,7 @@ app.use(
         .then(async (gen) => {
           genres = gen[0];
           (await connection).query(`
-          SELECT authors.\`name\` 
+          SELECT authors.\`name\`, authors.author_id
           FROM books_authors 
           JOIN authors 
           ON authors.author_id = books_authors.author_id 
@@ -471,19 +470,75 @@ app.use(
   '/search',
   async (req, res) => {
     try {
-      const { name } = req.query; 
-      const search = (typeof name === 'undefined') ? "" : name;
+      const { 
+        name, 
+        book_type,
+        genre, 
+        author, 
+        publisher, 
+        orderby 
+      } = req.query; 
 
-      //console.log(`search: name: ${name}`);
+      console.log(req.query);
 
-      (await connection).query(`
-      SELECT book_id, quantity, \`name\`, price, image, hidden 
-      FROM books 
-      WHERE \`name\` 
-      LIKE '%${search}%'
-      AND hidden='No';`)
-      .then(async (result) => {
+      let query = `
+        SELECT DISTINCT
+            b.book_id, 
+            b.quantity, 
+            b.\`name\`, 
+            b.price, 
+            b.image,
+            b.hidden
+        FROM 
+            books b
+        LEFT JOIN
+            books_authors ba ON b.book_id = ba.book_id
+        LEFT JOIN
+            books_genres bg ON b.book_id = bg.book_id
+        WHERE 
+            b.hidden = 'No'
+      `;
+
+      console.log(book_type);
+      if(book_type) {
+        query += ` AND b.format_id = ${book_type}`;
+      }
+
+      if (name) {
+        query += ` AND b.\`name\` LIKE '%${name}%'`;
+      }
+
+      if (publisher) {
+        query += ` AND b.publisher_id = ${publisher}`;
+      }
+
+      if (author) {
+        query += ` AND ba.author_id = ${author}`;
+      }
+
+      if (genre) {
+        query += ` AND bg.genre_id = ${genre}`;
+      }
+
+      if (orderby === 'price_asc') {
+        query += ` ORDER BY b.price ASC`;
+      } else if (orderby === 'price_des') {
+        query += ` ORDER BY b.price DESC`;
+      } else if (orderby === 'alphab_asc') {
+        query += ` ORDER BY b.\`name\` ASC`;
+      } else if (orderby === 'alphab_des') {
+        query += ` ORDER BY b.\`name\` DESC`;
+      }
+
+      console.log(query);
+
+      (await connection).query(query)
+      .then((result) => {
         res.send(result[0]);
+      })
+      .catch((error) => {
+        console.log(error);
+        res.status(500).send('Error retrieving data from database');
       });
     } catch (error) {
       console.log(error);
@@ -491,6 +546,37 @@ app.use(
     }  
   }
 );
+
+app.get('/params',
+  async (req, res) => {
+    try {
+      const {  
+        book_type = null,
+        genre = null, 
+        author = null, 
+        publisher = null
+      } = req.query;
+       
+      (await connection).query(`
+      SELECT 
+        (SELECT \`name\` FROM books_formats WHERE format_id = ${book_type}) AS book_format,
+        (SELECT \`name\` FROM genres WHERE genre_id = ${genre}) AS genre_name,
+        (SELECT \`name\` FROM authors WHERE author_id = ${author}) AS author_name,
+        (SELECT \`name\` FROM publisher WHERE publisher_id = ${publisher}) AS publisher_name;
+      `)
+      .then((result) => {
+        console.log(result[0][0])
+        res.send(result[0][0]);
+      })
+      .catch((error) => {
+        console.log(error);
+        res.status(500).send('Error retrieving data from database');
+      });
+    } catch (error) {
+      res.status(500).send('Error retrieving data from database');
+    }
+  }
+)
 
 app.listen(port, function() {
   console.log('Server is up and running!')
