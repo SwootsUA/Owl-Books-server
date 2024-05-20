@@ -312,27 +312,30 @@ app.use(
         region_id = 0, 
         city = null, 
         NovaPoshta = null, 
+        pickUpDate,
         description = '', 
         content 
       } = req.query;
+
+      console.log(req.query);
+      console.log(pickUpDate);
 
       const parsedContent = JSON.parse(content);
       const bookIds = parsedContent.map(item => item.id);
       const amounts = parsedContent.map(item => item.quantity);
       let orderId;
 
-
       const [user] = await (await connection).query(`SELECT user_id FROM users WHERE google_id = ?;`, [google_id]);
       let user_id = user.length > 0 ? user[0].user_id : undefined;
 
       // Construct the base query
       let addOrderQuery = `
-        INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, \`description\`${user_id !== undefined ? ', user_id' : ''}) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?${user_id !== undefined ? ', ?' : ''});
+        INSERT INTO order_info (\`name\`, surname, phone_number, email, region_id, city, NovaPoshta, pickUpDate, \`description\`${user_id !== undefined ? ', user_id' : ''}) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?${user_id !== undefined ? ', ?' : ''});
       `;
 
       // Query parameters
-      let queryParams = [name, surname, phone_number, email, region_id, city, NovaPoshta, description];
+      let queryParams = [name, surname, phone_number, email, region_id, city, NovaPoshta, pickUpDate, description];
       if (user_id !== undefined) {
         queryParams.push(user_id);
       }
