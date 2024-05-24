@@ -35,6 +35,11 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
 function isLoggedIn(req, res, next) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   req.user ? next() : res.status(401).send('<script>window.location.href = "http://localhost:5500/user.html" </script>');
@@ -273,7 +278,7 @@ app.get(
   }
 );
 
-app.use(
+app.get(
   '/add-order',
   async (req, res) => {
     try {
@@ -341,7 +346,7 @@ app.use(
 );
 
 
-app.use(
+app.get(
   '/cart',
   async (req, res) => {
     try {
@@ -370,7 +375,7 @@ app.use(
   }
 );
 
-app.use(
+app.get(
   '/item-quantity',
   async (req, res) => {
     try {
@@ -394,7 +399,7 @@ app.use(
 )
 
 
-app.use(
+app.get(
   '/item',
   async (req, res) => {
     try {
@@ -453,7 +458,7 @@ app.use(
   }
 );
 
-app.use(
+app.get(
   '/search',
   async (req, res) => {
     try {
