@@ -21,34 +21,39 @@ var connection = mysql.createConnection({
   database: 'owl-books'
 });
 
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
 app.use(cors({origin: ['http://localhost:5500', 'http://127.0.0.1:5500']}));
 app.use(bodyParser.json());
 
 // GOOGLE OAUTH2 Section (start)
 
+// covered
 app.use(session({ 
   secret: 'cats', 
   resave: false, 
   saveUninitialized: true 
 }));
 
+// covered
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
-  next();
-});
-
+// covered
 function isLoggedIn(req, res, next) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   req.user ? next() : res.status(401).send('<script>window.location.href = "http://localhost:5500/user.html" </script>');
 }
 
+// covered
 app.get('/auth/google',
   passport.authenticate('google', { scope: [ 'email', 'profile' ] }
 ));
 
+// covered
 app.get('/auth/google/callback',
   passport.authenticate('google', {
     successRedirect: '/close-window',
@@ -56,6 +61,7 @@ app.get('/auth/google/callback',
   })
 );
 
+// covered
 app.get('/save-user', isLoggedIn, async (req, res) => {
   try {
     const google_id = req.user.sub;
@@ -81,10 +87,13 @@ app.get('/save-user', isLoggedIn, async (req, res) => {
     console.log(values);
 
     try {
+      await (await connection).beginTransaction()
       await (await connection).query(saveUserQuery, values);
+      await (await connection).commit()
       res.status(200).send('user saved');
       console.log('user saved');
     } catch (error) {
+      await (await connection).rollback()
       res.status(500).send('internal server error');
       console.error('user NOT saved: ' + error);
     }
@@ -94,10 +103,12 @@ app.get('/save-user', isLoggedIn, async (req, res) => {
   }
 });
 
+// wouldn't be covered
 app.get('/close-window', (req, res) => {
   res.send('<script>window.location.href = "http://localhost:5500/user.html" </script>');
 })
 
+// covered
 app.get('/logout', (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
   req.logout(err => {
@@ -110,10 +121,12 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// wouldn't be covered
 app.get('/auth/google/failure', (req, res) => {
   res.send('failed to authorize');
 });
 
+// covered
 app.get('/protected', isLoggedIn, async (req, res) => {
   try {
     let info = await createNewUser(req);
@@ -123,6 +136,7 @@ app.get('/protected', isLoggedIn, async (req, res) => {
   }
 });
 
+// in added files
 async function createNewUser(req, res) {
   try {
     const google_id = req.user.id;
@@ -172,9 +186,12 @@ async function createNewUser(req, res) {
 
 // GOOGLE OAUTH2 Section (end)
 
-async function getFile(req, res, google_id, book_id, folder_path) {
+// wouldn't be covered
+async function getFile(req, res, folder_path) {
   try {
   var fileQuery;
+  const google_id = req.user.sub;
+  const { book_id } = req.query;
 
   if (!book_id) {
     return res.status(400).send('Missing required query parameters');
@@ -221,23 +238,18 @@ async function getFile(req, res, google_id, book_id, folder_path) {
   }
 }
 
+// will be covered
 app.get('/mp3', isLoggedIn, async (req, res) => {
-  const google_id = req.user.sub;
-  const { book_id } = req.query;
-
-  getFile(req, res, google_id, book_id, './audio_books/')
+    getFile(req, res, './audio_books/')
 });
 
+// will be covered
 app.get('/pdf', isLoggedIn, async (req, res) => {
-  const google_id = req.user.sub;
-  const { book_id } = req.query;
-
-  getFile(req, res, google_id, book_id, './electronic_books/')
+  getFile(req, res, './electronic_books/')
 });
 
-app.get(
-  '/books', isLoggedIn,
-  async function (req, res) {
+// covered
+app.get('/books', isLoggedIn, async (req, res) => {
     const google_id = req.user.sub;
     const { format_id } = req.query;
     var booksQuery;
@@ -270,29 +282,27 @@ app.get(
   }
 );
 
-app.get(
-  '/image', 
-  function(req, res) {
+// wouldn't be covered
+app.get('/image', (req, res) => {
     const { imgName } = req.query;
     res.sendFile(imgName, { root: path.join(__dirname, 'images') });
   }
 );
 
-app.get(
-  '/add-order',
-  async (req, res) => {
+// covered
+app.get('/add-order', async (req, res) => {
     try {
       const { 
-        google_id = 0, 
+        google_id, 
         name, 
         surname, 
-        phone_number = null, 
+        phone_number, 
         email, 
-        region_id = 0, 
-        city = null, 
-        NovaPoshta = null, 
+        region_id, 
+        city, 
+        NovaPoshta, 
         pickUpDate,
-        description = '', 
+        description, 
         content 
       } = req.query;
 
@@ -336,7 +346,7 @@ app.get(
       // Commit transaction
       await (await connection).commit();
       res.status(201).json({ orderId });
-      
+
     } catch (error) {
       await (await connection).rollback();
       console.error(`add-order: error: ${error}`);
@@ -345,23 +355,20 @@ app.get(
   }
 );
 
-
-app.get(
-  '/cart',
-  async (req, res) => {
+// covered
+app.get('/cart', async (req, res) => {
     try {
       const { ids } = req.query;
       var cartQuery;
-      
-      let search = (typeof ids === 'undefined' || ids == '') ? "-1" : ids;
+      let search = (typeof ids === 'undefined' || ids == '') ? [-1] : ids.split(',').map(id => parseInt(id));
       cartQuery = `SELECT books.format_id, books.book_id, books.image, books.\`name\`, books.price, (
-          SELECT authors.\`name\` 
-          FROM authors 
-          JOIN books_authors ON authors.author_id = books_authors.author_id 
-          WHERE books_authors.book_id = books.book_id LIMIT 1) AS author_name 
+        SELECT authors.\`name\` 
+        FROM authors 
+        JOIN books_authors ON authors.author_id = books_authors.author_id 
+        WHERE books_authors.book_id = books.book_id LIMIT 1) AS author_name 
       FROM books 
       WHERE books.book_id IN (?);`;
-
+  
       console.log(search);
 
       (await connection).query(cartQuery, [search])
@@ -375,33 +382,26 @@ app.get(
   }
 );
 
-app.get(
-  '/item-quantity',
-  async (req, res) => {
+// wouldn't be covered
+app.get('/item-quantity', async (req, res) => {
     try {
       const { id } = req.query;
       if(isNaN(id)) {
         res.status(404).send('404 Book not found');
-        return;
-      }
-
-      var itemQuantityQuery = `SELECT quantity FROM books WHERE book_id = ?;`;
-      (await connection).query(itemQuantityQuery, [id])
-      .then( (quantity) => {
-        res.send(quantity[0][0]);
-      })
-
+      } else {
+        var itemQuantityQuery = `SELECT quantity FROM books WHERE book_id = ?;`;
+        (await connection).query(itemQuantityQuery, [id])
+        .then( (quantity) => {
+          res.send(quantity[0][0]);
+      })}    
     } catch (error) {
       console.error(`item quantity: id: ${id} error: ${error}`);
       res.status(500).send('Error retrieving data from database');
     }
-  }
-)
+});
 
-
-app.get(
-  '/item',
-  async (req, res) => {
+// wouldn't be covered
+app.get('/item', async (req, res) => {
     try {
       const { id } = req.query;
       if(isNaN(id)) {
@@ -455,12 +455,10 @@ app.get(
       console.error('/item error: ' + error);
       res.status(500).send('Error retrieving data from database');
     }
-  }
-);
+});
 
-app.get(
-  '/search',
-  async (req, res) => {
+// covered
+app.get('/search', async (req, res) => {
     try {
       const { 
         name, 
@@ -493,15 +491,14 @@ app.get(
             b.hidden = 'No'
       `;
 
-      console.log(book_type);
       if(book_type) {
         query += ` AND b.format_id = ?`;
         params.push(book_type);
       }
 
       if (name) {
-        query += ` AND b.\`name\` LIKE '%?%'`;
-        params.push(name);
+        query += ` AND b.\`name\` LIKE ?`;
+        params.push(`%${name}%`);
       }
 
       if (publisher) {
@@ -529,8 +526,6 @@ app.get(
         query += ` ORDER BY b.\`name\` DESC`;
       }
 
-      console.log(query);
-
       (await connection).query(query, params)
       .then((result) => {
         res.send(result[0]);
@@ -546,8 +541,8 @@ app.get(
   }
 );
 
-app.get('/params',
-  async (req, res) => {
+// wouldn't be covered
+app.get('/params', async (req, res) => {
     try {
       const {  
         book_type = null,
@@ -579,6 +574,7 @@ app.get('/params',
   }
 )
 
-app.listen(port, function() {
+// covered
+app.listen(port, () => {
   console.log('Server is up and running!');
 });
